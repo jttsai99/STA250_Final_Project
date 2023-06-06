@@ -1,0 +1,112 @@
+---
+title: "Analysis2"
+author: "Jasper Tsai"
+date: "2023-06-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+data = read.csv('data/cleaned_data_GPS.csv')
+```
+
+## Replicates the anaylsis in the book
+Outcome model includes quadratic terms and an interaction term
+```{r}
+#fit the outcome model
+library(survey)
+# there is no weighting but use this package to apply the predict and svyconstrast function later
+designAN <- svydesign(id=~1,weights=~1,data =data)
+
+OutcomeModel <- svyglm(formula="meanScale2014~logLoginsPerExaminee + I(logLoginsPerExaminee^2) + GPS + I(GPS^2) + logLoginsPerExaminee:GPS", design = designAN)
+summary(OutcomeModel)
+```
+
+Quickly check residuals and normality assumption, both holds
+```{r}
+plot(OutcomeModel, which = 1)
+plot(OutcomeModel, which = 2)
+```
+
+
+```{r}
+## THIS PART IS TAKEN FROM 
+## The Leite, W. (2019, December 20). Practical propensity score methods using R. Sage Research Methods. https://methods.sagepub.com/book/practical-propensity-score-methods-using-r/i852.xml
+
+
+#Estimate the treatment effect at percentiles of GPS
+all.effects <- data.frame()#storage
+
+#loop through percentiles of dosage from 1% to 99%
+for (dose in quantile(data$logLoginsPerExaminee,probs=seq(0.01,1,0.01)) ) {
+  
+    #predict outcome given all the GPS for a fixed value of dosage
+    effects <- predict(OutcomeModel,type="response", vcov=T,
+                      newdata=data.frame(logLoginsPerExaminee=dose, GPS=data$GPS)  )
+    
+    effect <- svycontrast(effects,rep(1/nrow(data),nrow(data)))
+    
+    all.effects <- rbind(all.effects,data.frame(effect)) #accumulate results
+}
+
+#create a dataset of percentile of doses and responses
+doseResponses <- data.frame(percentile = seq(1,100,1),
+                           logLoginsPerExaminee=quantile(data$logLoginsPerExaminee,probs=seq(0.01,1,0.01)),
+                           all.effects)
+
+names(doseResponses)[3:4] <- c("meanScale2014","SE")
+
+#calculate confidence intervals
+doseResponses$lowerCL <- with(doseResponses, meanScale2014 - 1.96*SE)
+doseResponses$upperCL <- with(doseResponses, meanScale2014 + 1.96*SE)
+
+# export to be plotted in python
+write.csv(doseResponses, file="data/doseResponses.csv")
+```
+
+## Trying out a Linear term only model and do the same as above
+```{r}
+OutcomeModel2 <- svyglm(formula="meanScale2014~logLoginsPerExaminee + GPS", design = designAN)
+summary(OutcomeModel2)
+```
+Quickly check residuals and normality assumption, both holds which suggest that quadratic terms arent necessary
+```{r}
+plot(OutcomeModel2, which = 1)
+plot(OutcomeModel2, which = 2)
+```
+
+```{r}
+## THIS PART IS TAKEN FROM 
+## The Leite, W. (2019, December 20). Practical propensity score methods using R. Sage Research Methods. https://methods.sagepub.com/book/practical-propensity-score-methods-using-r/i852.xml
+
+
+#Estimate the treatment effect at percentiles of GPS
+all.effects <- data.frame()#storage
+
+#loop through percentiles of dosage from 1% to 99%
+for (dose in quantile(data$logLoginsPerExaminee,probs=seq(0.01,1,0.01)) ) {
+  
+    #predict outcome given all the GPS for a fixed value of dosage
+    effects <- predict(OutcomeModel2,type="response", vcov=T,
+                      newdata=data.frame(logLoginsPerExaminee=dose, GPS=data$GPS)  )
+    
+    effect <- svycontrast(effects,rep(1/nrow(data),nrow(data)))
+    
+    all.effects <- rbind(all.effects,data.frame(effect)) #accumulate results
+}
+
+#create a dataset of percentile of doses and responses
+doseResponses <- data.frame(percentile = seq(1,100,1),
+                           logLoginsPerExaminee=quantile(data$logLoginsPerExaminee,probs=seq(0.01,1,0.01)),
+                           all.effects)
+
+names(doseResponses)[3:4] <- c("meanScale2014","SE")
+
+#calculate confidence intervals
+doseResponses$lowerCL <- with(doseResponses, meanScale2014 - 1.96*SE)
+doseResponses$upperCL <- with(doseResponses, meanScale2014 + 1.96*SE)
+
+# export to be plotted in python
+write.csv(doseResponses, file="data/doseResponses2.csv")
+```
+
